@@ -92,7 +92,7 @@ namespace shijie{
 					bool m_bool;
 					long long m_int;
 					double m_double;
-					string *m_string;
+                    std::aligned_storage<sizeof(std::string)>::type m_string;
 					vector<Json> *m_array;
 					map<string, Json> *m_object;
 				};

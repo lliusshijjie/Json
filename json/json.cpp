@@ -28,12 +28,12 @@ Json::Json(double value) : m_type(json_double)
 
 Json::Json(const char *value) : m_type(json_string)
 {
-	m_value.m_string = new string(value);
+	new (&m_value.m_string) string(value);
 }
 
 Json::Json(const string &value) : m_type(json_string)
 {
-	m_value.m_string = new string(value);
+	new (&m_value.m_string) string(value);
 }
 
 Json::Json(Type type) : m_type(type)
@@ -52,7 +52,7 @@ Json::Json(Type type) : m_type(type)
 		m_value.m_double = 0.0;
 		break;
 	case json_string:
-		m_value.m_string = new string("");
+		new (&m_value.m_string) string("");
 		break;
 	case json_array:
 		m_value.m_array = new vector<Json>();
@@ -71,8 +71,14 @@ Json::Json(const Json &other)
 	copy(other);
 }
 
-Json::Json(Json&& other) : m_type(other.m_type), m_value(other.m_value)
+Json::Json(Json&& other) : m_type(other.m_type)
 {
+	if (m_type == json_string) {
+		new (&m_value.m_string) string(std::move(*reinterpret_cast<string*>(&other.m_value.m_string)));
+		reinterpret_cast<string*>(&other.m_value.m_string)->~string();
+	} else {
+		m_value = other.m_value;
+	}
 	other.m_type = json_null;
 }
 
@@ -120,7 +126,7 @@ Json::operator string() const
 	{
 		throw std::logic_error("type error,not string value");
 	}
-	return *m_value.m_string;
+	return *reinterpret_cast<const string*>(&m_value.m_string);
 }
 
 Json &Json::operator[](int index)
@@ -187,7 +193,12 @@ Json& Json::operator=(Json&& other)
 	if (this != &other) {
 		clear();
 		m_type = other.m_type;
-		m_value = other.m_value;
+		if (m_type == json_string) {
+			new (&m_value.m_string) string(std::move(*reinterpret_cast<string*>(&other.m_value.m_string)));
+			reinterpret_cast<string*>(&other.m_value.m_string)->~string();
+		} else {
+			m_value = other.m_value;
+		}
 		other.m_type = json_null;
 	}
 	return *this;
@@ -209,7 +220,7 @@ bool Json::operator==(const Json &other) const
 	case json_double:
 		return m_value.m_double == other.m_value.m_double;
 	case json_string:
-		return *(m_value.m_string) == *(other.m_value.m_string);
+		return *reinterpret_cast<const string*>(&m_value.m_string) == *reinterpret_cast<const string*>(&other.m_value.m_string);
 	case json_array:
 		if (m_value.m_array->size() != other.m_value.m_array->size()) return false;
 		for (size_t i = 0; i < m_value.m_array->size(); ++i) {
@@ -250,7 +261,7 @@ void Json::copy(const Json &other)
 		m_value.m_double = other.m_value.m_double;
 		break;
 	case json_string:
-		m_value.m_string = new string(*other.m_value.m_string);
+		new (&m_value.m_string) string(*reinterpret_cast<const string*>(&other.m_value.m_string));
 		break;
 	case json_array:
 		m_value.m_array = new vector<Json>();
@@ -286,7 +297,7 @@ void Json::clear()
 		m_value.m_double = 0.0;
 		break;
 	case json_string:
-		delete m_value.m_string;
+		reinterpret_cast<string*>(&m_value.m_string)->~string();
 		break;
 	case json_array:
 	{
@@ -353,7 +364,7 @@ string Json::str() const
 		ss << std::fixed << std::setprecision(15) << m_value.m_double;
 		break;
 	case json_string:
-		ss << '\"' << escape_string(*(m_value.m_string)) << '\"';
+		ss << '\"' << escape_string(*reinterpret_cast<const string*>(&m_value.m_string)) << '\"';
 		break;
 	case json_array:
 	{
@@ -427,7 +438,7 @@ string Json::asString() const
 	{
 		throw std::logic_error("type error,not string value");
 	}
-	return *(m_value.m_string);
+	return *reinterpret_cast<const string*>(&m_value.m_string);
 }
 
 bool Json::has(int index)
