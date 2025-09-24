@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include <sstream>
+#include <iomanip>
 #include "json.h"
 #include "parser.h"
 
@@ -15,7 +16,7 @@ Json::Json(bool value) : m_type(json_bool)
 	m_value.m_bool = value;
 }
 
-Json::Json(int value) : m_type(json_int)
+Json::Json(long long value) : m_type(json_int)
 {
 	m_value.m_int = value;
 }
@@ -66,39 +67,58 @@ Json::Json(Type type) : m_type(type)
 
 Json::Json(const Json &other)
 {
+	m_type = json_null;
 	copy(other);
 }
 
-Json::operator bool()
+Json::Json(Json&& other) : m_type(other.m_type), m_value(other.m_value)
+{
+	other.m_type = json_null;
+}
+
+Json::~Json()
+{
+	clear();
+}
+Json::operator bool() const
 {
 	if (m_type != json_bool)
 	{
-		throw new logic_error("type error,not bool value");
+		throw std::logic_error("type error,not bool value");
 	}
 	return m_value.m_bool;
 }
 
-Json::operator int()
+Json::operator int() const
 {
 	if (m_type != json_int)
 	{
-		throw new logic_error("type error,not int value");
+		throw std::logic_error("type error,not int value");
 	}
 	return m_value.m_int;
 }
-Json::operator double()
+Json::operator double() const
 {
 	if (m_type != json_double)
 	{
-		throw new logic_error("type error,not double value");
+		throw std::logic_error("type error,not double value");
 	}
 	return m_value.m_double;
 }
-Json::operator string()
+
+Json::operator long long() const
+{
+	if (m_type != json_int)
+	{
+		throw std::logic_error("type error,not long long value");
+	}
+	return m_value.m_int;
+}
+Json::operator string() const
 {
 	if (m_type != json_string)
 	{
-		throw new logic_error("type error,not string value");
+		throw std::logic_error("type error,not string value");
 	}
 	return *m_value.m_string;
 }
@@ -112,7 +132,7 @@ Json &Json::operator[](int index)
 		m_value.m_array = new vector<Json>();
 	}
 	if (index < 0)
-		throw new logic_error("array[] index < 0");
+		throw std::logic_error("array[] index < 0");
 
 	int size = (m_value.m_array)->size();
 	if (index >= size)
@@ -153,13 +173,26 @@ Json &Json::operator[](const string &key)
 	return (*(m_value.m_object))[key];
 }
 
-void Json::operator=(const Json &other)
+Json& Json::operator=(const Json &other)
 {
-	clear();
-	copy(other);
+	if (this != &other) {
+		clear();
+		copy(other);
+	}
+	return *this;
 }
 
-bool Json::operator==(const Json &other)
+Json& Json::operator=(Json&& other)
+{
+	if (this != &other) {
+		clear();
+		m_type = other.m_type;
+		m_value = other.m_value;
+		other.m_type = json_null;
+	}
+	return *this;
+}
+bool Json::operator==(const Json &other) const
 {
 	if (m_type != other.m_type)
 	{
@@ -178,15 +211,24 @@ bool Json::operator==(const Json &other)
 	case json_string:
 		return *(m_value.m_string) == *(other.m_value.m_string);
 	case json_array:
-		return m_value.m_array == other.m_value.m_array;
+		if (m_value.m_array->size() != other.m_value.m_array->size()) return false;
+		for (size_t i = 0; i < m_value.m_array->size(); ++i) {
+			if (! ((*m_value.m_array)[i] == (*other.m_value.m_array)[i])) return false;
+		}
+		return true;
 	case json_object:
-		return m_value.m_object = other.m_value.m_object;
+		if (m_value.m_object->size() != other.m_value.m_object->size()) return false;
+		for (const auto& pair : *m_value.m_object) {
+			auto it = other.m_value.m_object->find(pair.first);
+			if (it == other.m_value.m_object->end() || ! (pair.second == it->second)) return false;
+		}
+		return true;
 	default:
 		break;
 	}
 	return false;
 }
-bool Json::operator!=(const Json &other)
+bool Json::operator!=(const Json &other) const
 {
 	return !((*this) == other);
 }
@@ -208,13 +250,20 @@ void Json::copy(const Json &other)
 		m_value.m_double = other.m_value.m_double;
 		break;
 	case json_string:
-		m_value.m_string = other.m_value.m_string;
+		m_value.m_string = new string(*other.m_value.m_string);
 		break;
 	case json_array:
-		m_value.m_array = other.m_value.m_array;
+		m_value.m_array = new vector<Json>();
+		m_value.m_array->reserve(other.m_value.m_array->size());
+		for (const auto& elem : *other.m_value.m_array) {
+			m_value.m_array->push_back(Json(elem));
+		}
 		break;
 	case json_object:
-		m_value.m_object = other.m_value.m_object;
+		m_value.m_object = new map<string, Json>();
+		for (const auto& pair : *other.m_value.m_object) {
+			(*m_value.m_object)[pair.first] = Json(pair.second);
+		}
 		break;
 	default:
 		break;
@@ -263,6 +312,29 @@ void Json::clear()
 	m_type = json_null;
 }
 
+static string escape_string(const string& s) {
+    stringstream ss;
+    for (char c : s) {
+        switch (c) {
+            case '"': ss << "\\\""; break;
+            case '\\': ss << "\\\\"; break;
+            case '\b': ss << "\\b"; break;
+            case '\f': ss << "\\f"; break;
+            case '\n': ss << "\\n"; break;
+            case '\r': ss << "\\r"; break;
+            case '\t': ss << "\\t"; break;
+            default:    
+                if (iscntrl(static_cast<unsigned char>(c))) {
+                    ss << "\\u" << hex << setw(4) << setfill('0') << static_cast<int>(c);
+                } else {
+                    ss << c;
+                }
+                break;
+        }
+    }
+    return ss.str();
+}
+
 string Json::str() const
 {
 	stringstream ss;
@@ -278,10 +350,10 @@ string Json::str() const
 		ss << m_value.m_int;
 		break;
 	case json_double:
-		ss << m_value.m_double;
+		ss << std::fixed << std::setprecision(15) << m_value.m_double;
 		break;
 	case json_string:
-		ss << '\"' << *(m_value.m_string) << '\"';
+		ss << '\"' << escape_string(*(m_value.m_string)) << '\"';
 		break;
 	case json_array:
 	{
@@ -306,7 +378,7 @@ string Json::str() const
 			{
 				ss << ',';
 			}
-			ss << '\"' << it->first << '\"' << ':' << it->second.str();
+			ss << '\"' << escape_string(it->first) << '\"' << ':' << it->second.str();
 		}
 		ss << '}';
 	}
@@ -320,7 +392,7 @@ bool Json::asBool() const
 {
 	if (m_type != json_bool)
 	{
-		throw new logic_error("type error,not bool value");
+		throw std::logic_error("type error,not bool value");
 	}
 	return m_value.m_bool;
 }
@@ -328,7 +400,16 @@ int Json::asInt() const
 {
 	if (m_type != json_int)
 	{
-		throw new logic_error("type error,not int value");
+		throw std::logic_error("type error,not int value");
+	}
+	return m_value.m_int;
+}
+
+long long Json::asInt64() const
+{
+	if (m_type != json_int)
+	{
+		throw std::logic_error("type error,not int value");
 	}
 	return m_value.m_int;
 }
@@ -336,7 +417,7 @@ double Json::asDouble() const
 {
 	if (m_type != json_double)
 	{
-		throw new logic_error("type error,not double value");
+		throw std::logic_error("type error,not double value");
 	}
 	return m_value.m_double;
 }
@@ -344,7 +425,7 @@ string Json::asString() const
 {
 	if (m_type != json_string)
 	{
-		throw new logic_error("type error,not string value");
+		throw std::logic_error("type error,not string value");
 	}
 	return *(m_value.m_string);
 }
@@ -400,4 +481,21 @@ void Json::parse(const string &str)
 	Parser p;
 	p.load(str);
 	*this = p.parse();
+}
+Json::iterator Json::begin() {
+	if (m_type != json_array) throw std::logic_error("not an array");
+	return m_value.m_array->begin();
+}
+Json::iterator Json::end() {
+	if (m_type != json_array) throw std::logic_error("not an array");
+	return m_value.m_array->end();
+}
+
+Json::const_iterator Json::begin() const {
+	if (m_type != json_array) throw std::logic_error("not an array");
+	return m_value.m_array->begin();
+}
+Json::const_iterator Json::end() const {
+	if (m_type != json_array) throw std::logic_error("not an array");
+	return m_value.m_array->end();
 }

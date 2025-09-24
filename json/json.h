@@ -23,17 +23,20 @@ namespace shijie{
 
 				Json();
 				Json(bool value);
-				Json(int value);
+				Json(long long value);
 				Json(double value);
 				Json(const char * value);
 				Json(const string &value);
 				Json(Type type);
 				Json(const Json &other);
+				Json(Json&& other);
+				~Json();
 
-				operator bool();
-                operator int();				
-                operator double();				
-                operator string();
+				explicit operator bool() const;
+                explicit operator int() const;
+                explicit operator double() const;
+                explicit operator string() const;
+				explicit operator long long() const;
 
 				Json &operator[](int index);
 				void append(const Json &other);
@@ -41,19 +44,21 @@ namespace shijie{
 				Json &operator[](const char *key);
 				Json &operator[](const string &key);
 
-				void operator = (const Json &other);
-				bool operator == (const Json &other);
-				bool operator != (const Json &other);
+				Json& operator=(const Json &other);
+				Json& operator=(Json&& other);
+				bool operator == (const Json &other) const;
+				bool operator != (const Json &other) const;
 				void copy(const Json &other);
 				void clear();
 
 				typedef std::vector<Json>::iterator iterator;
-				iterator begin() {
-					return m_value.m_array->begin();
-				}
-				iterator end() {
-					return m_value.m_array->end();
-				}
+				typedef std::vector<Json>::const_iterator const_iterator;
+
+				iterator begin();
+				iterator end();
+
+				const_iterator begin() const;
+				const_iterator end() const;
 
 				bool isNull() const { return m_type == json_null;}
 				bool isBool() const { return m_type == json_bool;}
@@ -65,6 +70,7 @@ namespace shijie{
 
 				bool asBool() const ;
 				int asInt() const;
+				long long asInt64() const;
 				double asDouble() const;
 				string asString() const;
 
@@ -84,7 +90,7 @@ namespace shijie{
 			    union Value
 				{
 					bool m_bool;
-					int m_int;
+					long long m_int;
 					double m_double;
 					string *m_string;
 					vector<Json> *m_array;
